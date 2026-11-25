@@ -2,12 +2,12 @@
 FROM maven:3.9-eclipse-temurin-17-alpine AS builder
 WORKDIR /workspace
 
-# Copy POM and pre-fetch dependencies
+# Copy POM and source code
 COPY pom.xml ./
-RUN mvn dependency:go-offline -B || true
-
-# Copy source code and build
 COPY src ./src
+
+# Set low-memory footprint for Maven on t3.micro
+ENV MAVEN_OPTS="-Xmx512m -XX:+UseSerialGC"
 RUN mvn clean package -DskipTests -B
 
 # Stage 2: Production Runtime

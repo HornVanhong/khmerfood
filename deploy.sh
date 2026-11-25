@@ -42,10 +42,18 @@ if ! command -v docker &> /dev/null; then
     echo ">> Docker installed successfully."
 fi
 
-# 3. Build & Run KhmerFood Containers
-echo ">> Starting KhmerFood Stack with Docker Compose..."
+# 3. Build & Run KhmerFood Containers Sequentially (to avoid RAM competition on t3.micro)
+echo ">> [1/3] Starting PostgreSQL Database..."
 sudo docker compose down || true
-sudo docker compose up -d --build
+sudo docker compose up -d postgres
+
+echo ">> [2/3] Building & Starting Spring Boot Backend..."
+sudo docker compose build backend
+sudo docker compose up -d backend
+
+echo ">> [3/3] Building & Starting Next.js Frontend..."
+sudo docker compose build frontend
+sudo docker compose up -d frontend
 
 echo "============================================="
 echo ">> KhmerFood Deployment Complete!            "
