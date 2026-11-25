@@ -6,16 +6,20 @@ echo "   KhmerFood EC2 Automated Deployment Setup  "
 echo "============================================="
 
 # 1. Setup 2GB Swap space (crucial for t2.micro/t3.micro during Docker builds)
-if [ ! -f /swapfile ]; then
+if ! swapon --show 2>/dev/null | grep -q 'swap'; then
     echo ">> Configuring 2GB Swap Space..."
-    sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
-    sudo chmod 600 /swapfile
-    sudo mkswap /swapfile
-    sudo swapon /swapfile
-    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+    if [ ! -f /swapfile ]; then
+        sudo fallocate -l 2G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile 2>/dev/null || true
+    fi
+    sudo swapon /swapfile 2>/dev/null || true
+    if ! grep -q '/swapfile' /etc/fstab 2>/dev/null; then
+        echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab 2>/dev/null || true
+    fi
     echo ">> Swap configured successfully."
 else
-    echo ">> Swap already exists."
+    echo ">> Swap already active."
 fi
 
 # 2. Install Docker & Docker Compose if not present
