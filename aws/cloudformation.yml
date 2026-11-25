@@ -1,0 +1,160 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'KhmerFood Production Infrastructure - VPC, Subnets, and Amazon RDS PostgreSQL'
+
+Parameters:
+  DBMasterUser:
+    Type: String
+    Default: postgres
+    Description: Master username for PostgreSQL
+  DBMasterPassword:
+    Type: String
+    NoEcho: true
+    Description: Master password for PostgreSQL (8 to 41 characters. Strictly do NOT use @, /, ", ', \ or space)
+    MinLength: 8
+    MaxLength: 41
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    AllowedValues:
+      - db.t3.micro
+      - db.t4g.micro
+      - db.t3.small
+    Description: RDS instance type (db.t3.micro is globally supported in Free Tier)
+
+Resources:
+  # VPC & Networking
+  KhmerFoodVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: khmerfood-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: khmerfood-igw
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref KhmerFoodVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  SubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref KhmerFoodVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: khmerfood-subnet-a
+
+  SubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref KhmerFoodVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: khmerfood-subnet-b
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref KhmerFoodVPC
+      Tags:
+        - Key: Name
+          Value: khmerfood-rt
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetARouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetA
+      RouteTableId: !Ref RouteTable
+
+  SubnetBRouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetB
+      RouteTableId: !Ref RouteTable
+
+  # Security Group
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow PostgreSQL access for KhmerFood application
+      VpcId: !Ref KhmerFoodVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: khmerfood-rds-sg
+
+  # RDS Subnet Group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets for KhmerFood PostgreSQL
+      SubnetIds:
+        - !Ref SubnetA
+        - !Ref SubnetB
+
+  # PostgreSQL Database Instance
+  KhmerFoodDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: khmerfood-db
+      AllocatedStorage: 20
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: postgres
+      MasterUsername: !Ref DBMasterUser
+      MasterUserPassword: !Ref DBMasterPassword
+      DBName: khmerfood_db
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+      PubliclyAccessible: true
+      StorageType: gp2
+      BackupRetentionPeriod: 1
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: khmerfood-postgres
+
+Outputs:
+  RDSEndpoint:
+    Description: PostgreSQL Database Endpoint Address
+    Value: !GetAtt KhmerFoodDB.Endpoint.Address
+  RDSPort:
+    Description: PostgreSQL Port
+    Value: !GetAtt KhmerFoodDB.Endpoint.Port
+  JDBCUrl:
+    Description: JDBC Connection String for Spring Boot
+    Value: !Sub "jdbc:postgresql://${KhmerFoodDB.Endpoint.Address}:5432/khmerfood_db?sslmode=require"
+  VPCId:
+    Description: VPC ID
+    Value: !Ref KhmerFoodVPC
+  SubnetIds:
+    Description: Subnet IDs for App Runner VPC Connector
+    Value: !Join [",", [!Ref SubnetA, !Ref SubnetB]]
